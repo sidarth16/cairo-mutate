@@ -3,8 +3,15 @@ import subprocess
 import re
 import time
 
+import os
+import signal
+import sys
+
 TARGET_FILE = "src/lib.cairo"
 BACKUP_FILE = TARGET_FILE + ".bak"
+
+# ===== BACKUP TRACKING =====
+backups = set()
 
 # ===== COLORS =====
 class Colors:
@@ -29,11 +36,11 @@ uncaught_by_category = {
 }
 
 def get_category(name):
-    if name in ["AM-REM", "AM-REL"]:
+    if name in ["AS-REM", "AS-FLIP"]:
         return "ASSERT / VALIDATION"
     if name == "OP-ARI":
         return "ARITHMETIC LOGIC"
-    if name == "OP-REL":
+    if name == "OP-CMP":
         return "CONDITIONAL LOGIC"
     if name == "OP-ASG":
         return "STATE UPDATES"
@@ -51,7 +58,7 @@ def run_snforge():
 # ===== RESULT =====
 def process_result(output, compiled, caught):
     if "error" in output.lower():
-        return color("Compile Failed", Colors.GREY), compiled, caught
+        return color("Compile Error", Colors.GREY), compiled, caught
 
     compiled += 1
 
@@ -62,26 +69,42 @@ def process_result(output, compiled, caught):
     return color("✘ Uncaught", Colors.RED), compiled, caught
 
 # ===== SUMMARY PER MUTATOR =====
+
+def color_score(score):
+    if score >= 90:
+        return color(f"{score:.2f}%", Colors.GREEN)
+    elif score >= 70:
+        return color(f"{score:.2f}%", Colors.YELLOW)
+    else:
+        return color(f"{score:.2f}%", Colors.RED)
+    
+
 def print_summary(name, total, compiled, caught):
     uncaught = compiled - caught
     invalid = total - compiled
 
     score = (caught / compiled * 100) if compiled > 0 else 0
 
-    print(color(
-        f"[{name}] mutated {total} ({caught}/{compiled} caught, {invalid} invalid)  → score : {score:.2f}%",
-        Colors.PURPLE + Colors.BOLD
-    ))
+    if (invalid>0):
+        print(f"[{name}]",color(f"{invalid} invalid mutant(s) skipped (compile error)", Colors.GREY))
+        
+    if score>0: 
+        print(
+            color(f"[{name}] mutated {compiled} → caught {caught}/{compiled}",Colors.PURPLE + Colors.BOLD),
+            color(f"  | {color('score', Colors.GREY)}: {color_score(score)}%", Colors.BOLD )
+        )
+    else:
+        print(color(f"[{name}] mutated {compiled} → caught {caught}/{compiled}",Colors.PURPLE + Colors.BOLD))
 
 # ===== AM-REM =====
-def mutate_am_rem():
+def mutate_as_rem():
     with open(TARGET_FILE) as f:
         lines = f.read().split("\n")
 
     total = compiled = caught = 0
-    name = "AM-REM"
+    name = "AS-REM"
 
-    print(color("\n--- Running AM-REM (Assert Removal) ---", Colors.CYAN))
+    print(color("\n--- Running AS-REM (Assert Removal) ---", Colors.CYAN))
 
     for i, line in enumerate(lines):
         if "assert" not in line:
@@ -110,14 +133,14 @@ def mutate_am_rem():
     return total, compiled, caught
 
 # ===== AM-REL =====
-def mutate_am_rel():
+def mutate_as_flip():
     with open(TARGET_FILE) as f:
         lines = f.read().split("\n")
 
     total = compiled = caught = 0
-    name = "AM-REL"
+    name = "AS-FLIP"
 
-    print(color("\n--- Running AM-REL (Assert Relational Flip) ---", Colors.CYAN))
+    print(color("\n--- Running AM-FLIP (Assert Relational Flip) ---", Colors.CYAN))
 
     for i, line in enumerate(lines):
         if "assert" not in line:
@@ -142,7 +165,10 @@ def mutate_am_rel():
             output = run_snforge()
             status, compiled, caught = process_result(output, compiled, caught)
 
-            print(f"[{name}] {line.strip()} -> {mutated.strip()}  => {status}")
+            if 'error' in output.lower():
+                print(f"[{name}] ", color(f"{line.strip()} -> {mutated.strip()}  => {status}", Colors.GREY))
+            else:
+                print(f"[{name}] {line.strip()} -> {mutated.strip()}  => {status}")
 
             if "Uncaught" in status:
                 category = get_category(name)
@@ -154,15 +180,15 @@ def mutate_am_rel():
     print_summary(name, total, compiled, caught)
     return total, compiled, caught
 
-# ===== OP-REL =====
-def mutate_op_rel():
+# ===== OP-cmp =====
+def mutate_op_cmp():
     with open(TARGET_FILE) as f:
         lines = f.read().split("\n")
 
     total = compiled = caught = 0
-    name = "OP-REL"
+    name = "OP-CMP"
 
-    print(color("\n--- Running OP-REL (Relational Operator Mutation) ---", Colors.CYAN))
+    print(color("\n--- Running OP-CMP (Comparision Operator Mutation) ---", Colors.CYAN))
 
     for i, line in enumerate(lines):
         if "assert" in line:
@@ -187,7 +213,10 @@ def mutate_op_rel():
             output = run_snforge()
             status, compiled, caught = process_result(output, compiled, caught)
 
-            print(f"[{name}] {line.strip()} -> {mutated.strip()}  => {status}")
+            if 'error' in output.lower():
+                print(f"[{name}] ", color(f"{line.strip()} -> {mutated.strip()}  => {status}", Colors.GREY))
+            else:
+                print(f"[{name}] {line.strip()} -> {mutated.strip()}  => {status}")
 
             if "Uncaught" in status:
                 category = get_category(name)
@@ -232,7 +261,10 @@ def mutate_op_ari():
             output = run_snforge()
             status, compiled, caught = process_result(output, compiled, caught)
 
-            print(f"[{name}] {line.strip()} -> {mutated.strip()}  => {status}")
+            if 'error' in output.lower():
+                print(f"[{name}]", color(f"{line.strip()} -> {mutated.strip()}  => {status}", Colors.GREY))
+            else:
+                print(f"[{name}] {line.strip()} -> {mutated.strip()}  => {status}")
 
             if "Uncaught" in status:
                 category = get_category(name)
@@ -274,7 +306,10 @@ def mutate_op_asg():
             output = run_snforge()
             status, compiled, caught = process_result(output, compiled, caught)
 
-            print(f"[{name}] {line.strip()} -> {mutated.strip()}  => {status}")
+            if 'error' in output.lower():
+                print(f"[{name}] ", color(f"{line.strip()} -> {mutated.strip()}  => {status}", Colors.GREY))
+            else:
+                print(f"[{name}] {line.strip()} -> {mutated.strip()}  => {status}")
 
             if "Uncaught" in status:
                 category = get_category(name)
@@ -296,9 +331,9 @@ def main():
     total = compiled = caught = 0
 
     for fn in [
-        mutate_am_rem,
-        mutate_am_rel,
-        mutate_op_rel,
+        mutate_as_rem,
+        mutate_as_flip,
+        mutate_op_cmp,
         mutate_op_ari,
         mutate_op_asg,
     ]:
@@ -319,7 +354,7 @@ def main():
     
 
     # ===== TABLE SUMMARY =====
-    print(color("\n=== MUTATION SUMMARY ===\n", Colors.CYAN))
+    print(color("\n=== MUTATION SUMMARY ===", Colors.CYAN))
 
     w1 = 18
     w2 = 12
@@ -351,7 +386,7 @@ def main():
     total_uncaught = sum(uncaught_by_category.values())
 
     if total_uncaught > 0:
-        print(f"\n{color('Suggested Improvements:', Colors.YELLOW)} \n")
+        print(f"\n{color('⚑ Suggested Improvements:', Colors.YELLOW)} \n")
         print(f"Uncaught Mutations: {total_uncaught}\n")
 
         for category, count in uncaught_by_category.items():
