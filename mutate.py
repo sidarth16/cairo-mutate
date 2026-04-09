@@ -13,11 +13,31 @@ class Colors:
     YELLOW = "\033[93m"
     CYAN = "\033[96m"
     PURPLE = "\033[95m"
+    GREY = "\033[90m"
     BOLD = "\033[1m"
     RESET = "\033[0m"
 
 def color(text, c):
     return f"{c}{text}{Colors.RESET}"
+
+# ===== CATEGORY TRACKING =====
+uncaught_by_category = {
+    "ASSERT / VALIDATION": 0,
+    "ARITHMETIC LOGIC": 0,
+    "CONDITIONAL LOGIC": 0,
+    "STATE UPDATES": 0,
+}
+
+def get_category(name):
+    if name in ["AM-REM", "AM-REL"]:
+        return "ASSERT / VALIDATION"
+    if name == "OP-ARI":
+        return "ARITHMETIC LOGIC"
+    if name == "OP-REL":
+        return "CONDITIONAL LOGIC"
+    if name == "OP-ASG":
+        return "STATE UPDATES"
+    return None
 
 # ===== RUN TEST =====
 def run_snforge():
@@ -31,35 +51,25 @@ def run_snforge():
 # ===== RESULT =====
 def process_result(output, compiled, caught):
     if "error" in output.lower():
-        return color("Compilation Failed", Colors.YELLOW), compiled, caught
+        return color("Compile Failed", Colors.GREY), compiled, caught
 
     compiled += 1
-    # print(output)
+
     if "[FAIL]" in output:
         caught += 1
-        return color("Caught", Colors.GREEN), compiled, caught
+        return color("✔ Caught", Colors.GREEN), compiled, caught
 
-    return color("Uncaught", Colors.RED), compiled, caught
+    return color("✘ Uncaught", Colors.RED), compiled, caught
 
-# ===== INFERENCE =====
-def analyze(line):
-    l = line.lower()
-    if "assert" in l:
-        return "Invariant | CRITICAL"
-    if any(k in l for k in ["owner", "admin", "caller"]):
-        return "Authorization | HIGH"
-    return "Logic | LOW"
-
-def print_inference(line):
-    print(color(f"   ↳ {analyze(line)}", Colors.YELLOW))
-
-# ===== SUMMARY =====
+# ===== SUMMARY PER MUTATOR =====
 def print_summary(name, total, compiled, caught):
     uncaught = compiled - caught
     invalid = total - compiled
 
+    score = (caught / compiled * 100) if compiled > 0 else 0
+
     print(color(
-        f"[{name}] mutated {total} ({caught}/{compiled} caught, {invalid} invalid)",
+        f"[{name}] mutated {total} ({caught}/{compiled} caught, {invalid} invalid)  → score : {score:.2f}%",
         Colors.PURPLE + Colors.BOLD
     ))
 
@@ -71,7 +81,7 @@ def mutate_am_rem():
     total = compiled = caught = 0
     name = "AM-REM"
 
-    print(color("\n--- Running AM-REM (Assert Removal)---", Colors.CYAN))
+    print(color("\n--- Running AM-REM (Assert Removal) ---", Colors.CYAN))
 
     for i, line in enumerate(lines):
         if "assert" not in line:
@@ -87,10 +97,12 @@ def mutate_am_rem():
         output = run_snforge()
         status, compiled, caught = process_result(output, compiled, caught)
 
-        print(f"[{name}] {line.strip()} -> let _ = 0;  => {status}")
+        print(f"[{name}] {line.strip()} -> removed  => {status}")
 
         if "Uncaught" in status:
-            print_inference(line)
+            category = get_category(name)
+            if category:
+                uncaught_by_category[category] += 1
 
         shutil.copy(BACKUP_FILE, TARGET_FILE)
 
@@ -121,7 +133,6 @@ def mutate_am_rel():
             new_op = "!=" if op == "==" else "=="
 
             mutated = line[:start] + new_op + line[end:]
-
             mutated_lines = lines.copy()
             mutated_lines[i] = mutated
 
@@ -134,7 +145,9 @@ def mutate_am_rel():
             print(f"[{name}] {line.strip()} -> {mutated.strip()}  => {status}")
 
             if "Uncaught" in status:
-                print_inference(line)
+                category = get_category(name)
+                if category:
+                    uncaught_by_category[category] += 1
 
             shutil.copy(BACKUP_FILE, TARGET_FILE)
 
@@ -165,7 +178,6 @@ def mutate_op_rel():
             new_op = "!=" if op == "==" else "=="
 
             mutated = line[:start] + new_op + line[end:]
-
             mutated_lines = lines.copy()
             mutated_lines[i] = mutated
 
@@ -178,7 +190,9 @@ def mutate_op_rel():
             print(f"[{name}] {line.strip()} -> {mutated.strip()}  => {status}")
 
             if "Uncaught" in status:
-                print_inference(line)
+                category = get_category(name)
+                if category:
+                    uncaught_by_category[category] += 1
 
             shutil.copy(BACKUP_FILE, TARGET_FILE)
 
@@ -209,7 +223,6 @@ def mutate_op_ari():
             new_op = "-" if op == "+" else "+"
 
             mutated = line[:start] + new_op + line[end:]
-
             mutated_lines = lines.copy()
             mutated_lines[i] = mutated
 
@@ -222,7 +235,9 @@ def mutate_op_ari():
             print(f"[{name}] {line.strip()} -> {mutated.strip()}  => {status}")
 
             if "Uncaught" in status:
-                print_inference(line)
+                category = get_category(name)
+                if category:
+                    uncaught_by_category[category] += 1
 
             shutil.copy(BACKUP_FILE, TARGET_FILE)
 
@@ -250,7 +265,6 @@ def mutate_op_asg():
 
             start, end = m.span()
             mutated = line[:start] + "=" + line[end:]
-
             mutated_lines = lines.copy()
             mutated_lines[i] = mutated
 
@@ -263,7 +277,9 @@ def mutate_op_asg():
             print(f"[{name}] {line.strip()} -> {mutated.strip()}  => {status}")
 
             if "Uncaught" in status:
-                print_inference(line)
+                category = get_category(name)
+                if category:
+                    uncaught_by_category[category] += 1
 
             shutil.copy(BACKUP_FILE, TARGET_FILE)
 
@@ -293,20 +309,74 @@ def main():
 
     uncaught = compiled - caught
     invalid = total - compiled
-
-    print(color("\n=== MUTATION SUMMARY ===", Colors.CYAN))
-    print(f"Total Mutants      : {total}")
-    print(f"Valid Mutants      : {compiled}")
-    print(f"  Caught           : {color(str(caught), Colors.GREEN)}")
-    print(f"  Uncaught         : {color(str(uncaught), Colors.RED)}")
-    print(f"Invalid Mutants    : {color(str(invalid), Colors.YELLOW)}")
-
     score = (caught / compiled * 100) if compiled > 0 else 0
-    print(f"Score (valid only) : {color(f'{score:.2f}%', Colors.BOLD)}")
+
+    score_str = color(f"{score:.2f}%", Colors.GREEN)
+    if score < 80:
+        score_str = color(score_str, Colors.YELLOW)
+    if score < 50:
+        score_str = color(score_str, Colors.RED)
+    
+
+    # ===== TABLE SUMMARY =====
+    print(color("\n=== MUTATION SUMMARY ===\n", Colors.CYAN))
+
+    w1 = 18
+    w2 = 12
+
+    border = "+" + "-"*w1 + "+" + "-"*w2 + "+"
+
+    def pad(val, width):
+        return f"{val:<{width}}"
+
+    print(border)
+    print(f"| {pad('Metric', w1-2)} | {pad('Value', w2-2)} |")
+    print(border)
+
+    print(f"| {pad('Valid Mutants', w1-2)} | {pad(str(compiled), w2-2)} |")
+
+    print(f"| {pad('Caught', w1-2)} | {color(pad(str(caught), w2-2), Colors.GREEN)} |")
+
+    print(f"| {pad('Uncaught', w1-2)} | {color(pad(str(uncaught), w2-2), Colors.RED)} |")
+
+    print(f"| {pad('Score', w1-2)} | {color(pad(f'{score:.2f}%', w2-2), Colors.BOLD)} |")
+
+    print(border)
 
     end_time = time.time()
     duration = end_time - start_time
     print(color(f"\nMutation Analysis Completed in : {duration:.2f}s", Colors.CYAN))
+
+    # ===== NOTES =====
+    total_uncaught = sum(uncaught_by_category.values())
+
+    if total_uncaught > 0:
+        print(f"\n{color('Suggested Improvements:', Colors.YELLOW)} \n")
+        print(f"Uncaught Mutations: {total_uncaught}\n")
+
+        for category, count in uncaught_by_category.items():
+            if count == 0:
+                continue
+
+            print(f"{category.lower()} ({count}):")
+            
+            if category == "ASSERT / VALIDATION":
+                print("  Assertions were removed or altered without affecting test outcomes")
+                print("  → consider testing failure paths and invalid inputs\n")
+
+            elif category == "ARITHMETIC LOGIC":
+                print("  arithmetic changes did not affect test results")
+                print("  → consider testing boundary values and calculations\n")
+
+            elif category == "CONDITIONAL LOGIC":
+                print("  conditional changes did not affect test results")
+                print("  → consider testing alternate branches\n")
+
+            elif category == "STATE UPDATES":
+                print("  state updates were not strictly validated")
+                print("  → consider asserting state transitions\n")
+
+        
 
 
 if __name__ == "__main__":
