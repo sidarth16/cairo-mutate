@@ -183,70 +183,78 @@ def print_filewise_table(results):
         score = format_score_value(compiled, caught)
         total_compiled += compiled
         total_caught += caught
-        rows.append([
-            file_label(item["file"]),
-            str(compiled),
-            str(caught),
-            str(uncaught),
-            f"{score:.2f}%",
-        ])
+        rows.append({
+            "file": file_label(item["file"]),
+            "mutants": str(compiled),
+            "caught": str(caught),
+            "uncaught": str(uncaught),
+            "score": f"{score:.2f}%",
+            "compiled": compiled,
+            "is_total": False,
+        })
 
     total_uncaught = total_compiled - total_caught
     total_score = format_score_value(total_compiled, total_caught)
-    rows.append([
-        "Total",
-        str(total_compiled),
-        str(total_caught),
-        str(total_uncaught),
-        f"{total_score:.2f}%",
-    ])
+    rows.append({
+        "file": "Total",
+        "mutants": str(total_compiled),
+        "caught": str(total_caught),
+        "uncaught": str(total_uncaught),
+        "score": f"{total_score:.2f}%",
+        "compiled": total_compiled,
+        "is_total": True,
+    })
 
     widths = [len(h) for h in headers]
     for row in rows:
-        for idx, cell in enumerate(row):
+        values = [row["file"], row["mutants"], row["caught"], row["uncaught"], row["score"]]
+        for idx, cell in enumerate(values):
             widths[idx] = max(widths[idx], len(cell))
 
     def border(char="-"):
         return "+" + "+".join(char * (width + 2) for width in widths) + "+"
 
-    def score_color(score):
+    def score_color(score, compiled):
+        if compiled == 0:
+            return Colors.GREY
         if score >= 90:
             return Colors.GREEN
         if score >= 70:
             return Colors.YELLOW
         return Colors.RED
 
-    def render_cell(idx, value, row_type="file"):
+    def render_cell(idx, value, row):
         padded = f"{value:<{widths[idx]}}"
-
-        if row_type == "header":
-            return color(f" {padded} ", Colors.BOLD)
 
         if idx == 2:
             return color(f" {padded} ", Colors.GREEN)
         if idx == 3:
             return color(f" {padded} ", Colors.RED)
         if idx == 4:
-            if row_type == "total":
-                return color(f" {padded} ", Colors.BOLD + score_color(float(value.rstrip('%'))))
-            return color(f" {padded} ", score_color(float(value.rstrip('%'))))
+            score = float(value.rstrip('%'))
+            if row["is_total"]:
+                return color(f" {padded} ", Colors.BOLD + score_color(score, row["compiled"]))
+            return color(f" {padded} ", score_color(score, row["compiled"]))
 
-        if row_type == "total":
+        if row["is_total"]:
             return color(f" {padded} ", Colors.BOLD)
         return f" {padded} "
 
-    def render_row(values, row_type="file"):
-        cells = [render_cell(idx, value, row_type=row_type) for idx, value in enumerate(values)]
+    def render_row(row):
+        values = [row["file"], row["mutants"], row["caught"], row["uncaught"], row["score"]]
+        cells = [render_cell(idx, value, row) for idx, value in enumerate(values)]
         return "|" + "|".join(cells) + "|"
 
-    print(color("\n=== FILEWISE SUMMARY ===", Colors.CYAN))
+    print(color("\n➤ Mutation Report", Colors.CYAN + Colors.BOLD))
     print(border("-"))
-    print(render_row(headers, row_type="header"))
+    header_row = { "file": "File", "mutants": "Mutants", "caught": "Caught", "uncaught": "Uncaught", "score": "Score", "compiled": 0, "is_total": False }
+    header_cells = [f" {h:<{widths[idx]}} " for idx, h in enumerate(headers)]
+    print("|" + "|".join(color(cell, Colors.BOLD) for cell in header_cells) + "|")
     print(border("-"))
     for row in rows[:-1]:
         print(render_row(row))
     print(border("-"))
-    print(render_row(rows[-1], row_type="total"))
+    print(render_row(rows[-1]))
     print(border("-"))
 
 
@@ -263,9 +271,9 @@ def mutate_as_rem():
         lines = f.read().split("\n")
 
     total = compiled = caught = 0
-    name = "AS-REM"
+    name = "AS-RM"
 
-    print(color("\n--- Running AS-REM ---", Colors.CYAN))
+    print(color("\n--- AS-REM (Assert Removal) ---", Colors.CYAN))
 
     for i, line in enumerate(lines):
         if "assert" not in line:
@@ -281,7 +289,7 @@ def mutate_as_rem():
         output = run_snforge()
         status, compiled, caught = process_result(output, compiled, caught)
 
-        line_out = f"[{name}] {line.strip()} -> let _ = 0; => {status}"
+        line_out = f"[{name}] L{i + 1}: {line.strip()} → let _ = 0; => {status}"
         if "Compile Error" in status:
             print(color(line_out, Colors.GREY))
         else:
@@ -302,18 +310,26 @@ def mutate_as_flip():
 
     total = compiled = caught = 0
     name = "AS-FLIP"
+    flips = {
+        "==": "!=",
+        "!=": "==",
+        ">": "<",
+        "<": ">",
+        ">=": "<=",
+        "<=": ">=",
+    }
 
-    print(color("\n--- Running AS-FLIP ---", Colors.CYAN))
+    print(color("\n--- AS-FLIP (Assert Condition Flip) ---", Colors.CYAN))
 
     for i, line in enumerate(lines):
         if "assert" not in line:
             continue
 
-        for m in re.finditer(r"(==|!=)", line):
+        for m in re.finditer(r"(>=|<=|==|!=|>|<)", line):
             total += 1
             start, end = m.span()
             op = m.group()
-            new_op = "!=" if op == "==" else "=="
+            new_op = flips[op]
 
             mutated = lines.copy()
             mutated[i] = line[:start] + new_op + line[end:]
@@ -324,7 +340,7 @@ def mutate_as_flip():
             output = run_snforge()
             status, compiled, caught = process_result(output, compiled, caught)
 
-            line_out = f"[{name}] {line.strip()} -> {mutated[i].strip()} => {status}"
+            line_out = f"[{name}] L{i + 1}: {line.strip()} → {mutated[i].strip()} => {status}"
             if "Compile Error" in status:
                 print(color(line_out, Colors.GREY))
             else:
@@ -345,7 +361,12 @@ def mutate_generic(name, pattern, transform):
 
     total = compiled = caught = 0
 
-    print(color(f"\n--- Running {name} ---", Colors.CYAN))
+    full_name = {
+        "OP-CMP": "OP-CMP (Comparison Operator Mutation)",
+        "OP-ARI": "OP-ARI (Arithmetic Operator Mutation)",
+        "OP-ASG": "OP-ASG (Assignment Operator Mutation)",
+    }.get(name, name)
+    print(color(f"\n--- {full_name} ---", Colors.CYAN))
 
     for i, line in enumerate(lines):
         if "assert" in line:
@@ -365,7 +386,7 @@ def mutate_generic(name, pattern, transform):
             output = run_snforge()
             status, compiled, caught = process_result(output, compiled, caught)
 
-            line_out = f"[{name}] {line.strip()} -> {mutated[i].strip()} => {status}"
+            line_out = f"[{name}] L{i + 1}: {line.strip()} → {mutated[i].strip()} => {status}"
             if "Compile Error" in status:
                 print(color(line_out, Colors.GREY))
             else:
@@ -404,8 +425,7 @@ def mutate_file(file_path):
     ensure_backup(TARGET_FILE)
 
     try:
-        print(color(f"\n📄 Mutating {file_label(file_path)}", Colors.BOLD))
-        print(color(f"--- File Start: {file_label(file_path)} ---", Colors.CYAN))
+        print(color(f"\n▶ Mutating {file_label(file_path)}", Colors.YELLOW + Colors.BOLD))
 
         file_total = file_compiled = file_caught = 0
 
@@ -421,7 +441,7 @@ def mutate_file(file_path):
             file_compiled += c
             file_caught += ca
 
-        print(color(f"Finished mutating {file_label(file_path)}", Colors.GREY))
+        print(color(f"\n ✔ Finished mutating {file_label(file_path)}", Colors.GREY))
 
         return {
             "file": file_path,
@@ -466,7 +486,7 @@ def main():
 
     duration = time.time() - start_time
     print(f"Final Mutation Score : {color_score(score)}")
-    print(color(f"Completed in {duration:.2f}s", Colors.BLUE if hasattr(Colors, "BLUE") else Colors.CYAN))
+    print(color(f"\nCompleted in {duration:.2f}s", Colors.BLUE if hasattr(Colors, "BLUE") else Colors.CYAN))
 
 
 if __name__ == "__main__":
