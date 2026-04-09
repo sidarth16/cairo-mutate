@@ -1,8 +1,10 @@
-import re
 import shutil
 import subprocess
+import re
+import time
 
 TARGET_FILE = "src/lib.cairo"
+BACKUP_FILE = TARGET_FILE + ".bak"
 
 # ===== COLORS =====
 class Colors:
@@ -10,6 +12,7 @@ class Colors:
     GREEN = "\033[92m"
     YELLOW = "\033[93m"
     CYAN = "\033[96m"
+    PURPLE = "\033[95m"
     BOLD = "\033[1m"
     RESET = "\033[0m"
 
@@ -23,182 +26,287 @@ def run_snforge():
         capture_output=True,
         text=True
     )
-    return result.returncode, result.stdout + result.stderr
+    return result.stdout + result.stderr
 
-# ===== INFERENCE LAYER =====
-def analyze_mutation(original_line):
-    line = original_line.lower()
+# ===== RESULT =====
+def process_result(output, compiled, caught):
+    if "error" in output.lower():
+        return color("Compilation Failed", Colors.YELLOW), compiled, caught
 
-    if any(k in line for k in ["caller", "owner", "admin"]):
-        return ("Authorization Check", "HIGH",
-                "Authorization logic may not be properly tested")
+    compiled += 1
+    # print(output)
+    if "[FAIL]" in output:
+        caught += 1
+        return color("Caught", Colors.GREEN), compiled, caught
 
-    if "assert" in line:
-        return ("Invariant", "CRITICAL",
-                "Invariant not enforced by tests")
+    return color("Uncaught", Colors.RED), compiled, caught
 
-    if any(op in line for op in [">", "<", ">=", "<="]):
-        return ("Boundary Condition", "MEDIUM",
-                "Edge cases may not be covered")
+# ===== INFERENCE =====
+def analyze(line):
+    l = line.lower()
+    if "assert" in l:
+        return "Invariant | CRITICAL"
+    if any(k in l for k in ["owner", "admin", "caller"]):
+        return "Authorization | HIGH"
+    return "Logic | LOW"
 
-    return ("Generic Logic", "LOW",
-            "Condition not validated by tests")
+def print_inference(line):
+    print(color(f"   ↳ {analyze(line)}", Colors.YELLOW))
 
-# ===== OPERATOR MUTATIONS =====
-OP_MUTATIONS = {
-    "==": ["!=", ">", "<", ">=", "<="],
-    "!=": ["==", ">", "<", ">=", "<="],
-    ">": ["<", ">=", "<=", "==", "!="],
-    "<": [">", ">=", "<=", "==", "!="],
-    ">=": [">", "<", "<=", "==", "!="],
-    "<=": ["<", ">", ">=", "==", "!="],
-}
+# ===== SUMMARY =====
+def print_summary(name, total, compiled, caught):
+    uncaught = compiled - caught
+    invalid = total - compiled
 
-# ===== MUTATORS =====
+    print(color(
+        f"[{name}] mutated {total} ({caught}/{compiled} caught, {invalid} invalid)",
+        Colors.PURPLE + Colors.BOLD
+    ))
 
-def comment_out(line):
-    if line.strip().startswith("//"):
-        return line
-    return "// " + line
+# ===== AM-REM =====
+def mutate_am_rem():
+    with open(TARGET_FILE) as f:
+        lines = f.read().split("\n")
 
-def mutate_asserts():
-    with open(TARGET_FILE, "r") as f:
-        original = f.read()
+    total = compiled = caught = 0
+    name = "AM-REM"
 
-    lines = original.split("\n")
-    matches = [(i, l) for i, l in enumerate(lines) if "assert" in l]
-
-    total = len(matches)
-    compiled = 0
-    caught = 0
-
-    print(color("\n--- Running mutator RR (Assertion Removal) ---", Colors.CYAN))
-
-    for idx, (i, line) in enumerate(matches):
-        mutated_lines = lines.copy()
-        mutated_lines[i] = comment_out(line)
-
-        mutated_code = "\n".join(mutated_lines)
-
-        shutil.copy(TARGET_FILE, TARGET_FILE + ".bak")
-        with open(TARGET_FILE, "w") as f:
-            f.write(mutated_code)
-
-        code, output = run_snforge()
-
-        if "error" in output.lower():
-            status = "Compilation Failed"
-            status_col = color(status, Colors.YELLOW)
-        else:
-            compiled += 1
-            if "[FAIL]" in output or "failed" in output.lower():
-                status = "Caught"
-                status_col = color(status, Colors.GREEN)
-                caught += 1
-            else:
-                status = "Uncaught"
-                status_col = color(status, Colors.RED)
-
-        print(f"[{color('RR', Colors.BOLD)}] {line.strip()} -> // {line.strip()} : {status_col}")
-
-        if status == "Uncaught":
-            t, sev, msg = analyze_mutation(line)
-            print(color(f"   ↳ {t} | {sev} | {msg}", Colors.YELLOW))
-
-        shutil.copy(TARGET_FILE + ".bak", TARGET_FILE)
-
-    print(color(f"\nmutator RR : mutated {total} ({caught} caught out of {compiled} that compiled)\n", Colors.BOLD))
-    return total, caught
-
-
-def mutate_operators():
-    with open(TARGET_FILE, "r") as f:
-        original = f.read()
-
-    lines = original.split("\n")
-
-    total = 0
-    compiled = 0
-    caught = 0
-
-    print(color("\n--- Running mutator RO (Operator Mutation) ---", Colors.CYAN))
+    print(color("\n--- Running AM-REM (Assert Removal)---", Colors.CYAN))
 
     for i, line in enumerate(lines):
-        for op, replacements in OP_MUTATIONS.items():
-            if op in line:
-                for rep in replacements:
-                    total += 1
+        if "assert" not in line:
+            continue
 
-                    mutated_line = line.replace(op, rep, 1)
-                    mutated_lines = lines.copy()
-                    mutated_lines[i] = mutated_line
+        total += 1
+        mutated_lines = lines.copy()
+        mutated_lines[i] = "let _ = 0;"
 
-                    mutated_code = "\n".join(mutated_lines)
+        with open(TARGET_FILE, "w") as f:
+            f.write("\n".join(mutated_lines))
 
-                    shutil.copy(TARGET_FILE, TARGET_FILE + ".bak")
-                    with open(TARGET_FILE, "w") as f:
-                        f.write(mutated_code)
+        output = run_snforge()
+        status, compiled, caught = process_result(output, compiled, caught)
 
-                    code, output = run_snforge()
+        print(f"[{name}] {line.strip()} -> let _ = 0;  => {status}")
 
-                    if "error" in output.lower():
-                        status = "Compilation Failed"
-                        status_col = color(status, Colors.YELLOW)
-                    else:
-                        compiled += 1
-                        if "[FAIL]" in output or "failed" in output.lower():
-                            status = "Caught"
-                            status_col = color(status, Colors.GREEN)
-                            caught += 1
-                        else:
-                            status = "Uncaught"
-                            status_col = color(status, Colors.RED)
+        if "Uncaught" in status:
+            print_inference(line)
 
-                    print(
-                        f"[{color('RO', Colors.BOLD)}] "
-                        f"{color(line.strip(), Colors.CYAN)} "
-                        f"-> {color(mutated_line.strip(), Colors.YELLOW)} : "
-                        f"{status_col}"
-                    )
+        shutil.copy(BACKUP_FILE, TARGET_FILE)
 
-                    if status == "Uncaught":
-                        t, sev, msg = analyze_mutation(line)
-                        print(color(f"   ↳ {t} | {sev} | {msg}", Colors.YELLOW))
+    print_summary(name, total, compiled, caught)
+    return total, compiled, caught
 
-                    shutil.copy(TARGET_FILE + ".bak", TARGET_FILE)
+# ===== AM-REL =====
+def mutate_am_rel():
+    with open(TARGET_FILE) as f:
+        lines = f.read().split("\n")
 
-    print(color(f"\nmutator RO : mutated {total} ({caught} caught out of {compiled} that compiled)\n", Colors.BOLD))
-    return total, caught
+    total = compiled = caught = 0
+    name = "AM-REL"
 
+    print(color("\n--- Running AM-REL (Assert Relational Flip) ---", Colors.CYAN))
+
+    for i, line in enumerate(lines):
+        if "assert" not in line:
+            continue
+
+        matches = list(re.finditer(r"(==|!=)", line))
+
+        for m in matches:
+            total += 1
+
+            start, end = m.span()
+            op = m.group()
+            new_op = "!=" if op == "==" else "=="
+
+            mutated = line[:start] + new_op + line[end:]
+
+            mutated_lines = lines.copy()
+            mutated_lines[i] = mutated
+
+            with open(TARGET_FILE, "w") as f:
+                f.write("\n".join(mutated_lines))
+
+            output = run_snforge()
+            status, compiled, caught = process_result(output, compiled, caught)
+
+            print(f"[{name}] {line.strip()} -> {mutated.strip()}  => {status}")
+
+            if "Uncaught" in status:
+                print_inference(line)
+
+            shutil.copy(BACKUP_FILE, TARGET_FILE)
+
+    print_summary(name, total, compiled, caught)
+    return total, compiled, caught
+
+# ===== OP-REL =====
+def mutate_op_rel():
+    with open(TARGET_FILE) as f:
+        lines = f.read().split("\n")
+
+    total = compiled = caught = 0
+    name = "OP-REL"
+
+    print(color("\n--- Running OP-REL (Relational Operator Mutation) ---", Colors.CYAN))
+
+    for i, line in enumerate(lines):
+        if "assert" in line:
+            continue
+
+        matches = list(re.finditer(r"(==|!=)", line))
+
+        for m in matches:
+            total += 1
+
+            start, end = m.span()
+            op = m.group()
+            new_op = "!=" if op == "==" else "=="
+
+            mutated = line[:start] + new_op + line[end:]
+
+            mutated_lines = lines.copy()
+            mutated_lines[i] = mutated
+
+            with open(TARGET_FILE, "w") as f:
+                f.write("\n".join(mutated_lines))
+
+            output = run_snforge()
+            status, compiled, caught = process_result(output, compiled, caught)
+
+            print(f"[{name}] {line.strip()} -> {mutated.strip()}  => {status}")
+
+            if "Uncaught" in status:
+                print_inference(line)
+
+            shutil.copy(BACKUP_FILE, TARGET_FILE)
+
+    print_summary(name, total, compiled, caught)
+    return total, compiled, caught
+
+# ===== OP-ARI =====
+def mutate_op_ari():
+    with open(TARGET_FILE) as f:
+        lines = f.read().split("\n")
+
+    total = compiled = caught = 0
+    name = "OP-ARI"
+
+    print(color("\n--- Running OP-ARI (Arithmetic Operator Mutation) ---", Colors.CYAN))
+
+    for i, line in enumerate(lines):
+        if "assert" in line:
+            continue
+
+        matches = list(re.finditer(r"(\+|-)", line))
+
+        for m in matches:
+            total += 1
+
+            start, end = m.span()
+            op = m.group()
+            new_op = "-" if op == "+" else "+"
+
+            mutated = line[:start] + new_op + line[end:]
+
+            mutated_lines = lines.copy()
+            mutated_lines[i] = mutated
+
+            with open(TARGET_FILE, "w") as f:
+                f.write("\n".join(mutated_lines))
+
+            output = run_snforge()
+            status, compiled, caught = process_result(output, compiled, caught)
+
+            print(f"[{name}] {line.strip()} -> {mutated.strip()}  => {status}")
+
+            if "Uncaught" in status:
+                print_inference(line)
+
+            shutil.copy(BACKUP_FILE, TARGET_FILE)
+
+    print_summary(name, total, compiled, caught)
+    return total, compiled, caught
+
+# ===== OP-ASG =====
+def mutate_op_asg():
+    with open(TARGET_FILE) as f:
+        lines = f.read().split("\n")
+
+    total = compiled = caught = 0
+    name = "OP-ASG"
+
+    print(color("\n--- Running OP-ASG (Assignment Operator Mutation) ---", Colors.CYAN))
+
+    for i, line in enumerate(lines):
+        if "assert" in line:
+            continue
+
+        matches = list(re.finditer(r"(\+=|-=)", line))
+
+        for m in matches:
+            total += 1
+
+            start, end = m.span()
+            mutated = line[:start] + "=" + line[end:]
+
+            mutated_lines = lines.copy()
+            mutated_lines[i] = mutated
+
+            with open(TARGET_FILE, "w") as f:
+                f.write("\n".join(mutated_lines))
+
+            output = run_snforge()
+            status, compiled, caught = process_result(output, compiled, caught)
+
+            print(f"[{name}] {line.strip()} -> {mutated.strip()}  => {status}")
+
+            if "Uncaught" in status:
+                print_inference(line)
+
+            shutil.copy(BACKUP_FILE, TARGET_FILE)
+
+    print_summary(name, total, compiled, caught)
+    return total, compiled, caught
 
 # ===== MAIN =====
 def main():
     print(color("\n🚀 Starting Cairo Mutation Testing...\n", Colors.BOLD))
+    start_time = time.time()
 
-    total_all = 0
-    caught_all = 0
+    shutil.copy(TARGET_FILE, BACKUP_FILE)
 
-    t, c = mutate_asserts()
-    total_all += t
-    caught_all += c
+    total = compiled = caught = 0
 
-    t, c = mutate_operators()
-    total_all += t
-    caught_all += c
+    for fn in [
+        mutate_am_rem,
+        mutate_am_rel,
+        mutate_op_rel,
+        mutate_op_ari,
+        mutate_op_asg,
+    ]:
+        t, c, ca = fn()
+        total += t
+        compiled += c
+        caught += ca
 
-    print(color("=== FINAL SUMMARY ===", Colors.CYAN))
+    uncaught = compiled - caught
+    invalid = total - compiled
 
-    print(f"Total Mutations : {total_all}")
-    print(f"Caught          : {color(str(caught_all), Colors.GREEN)}")
-    print(f"Uncaught        : {color(str(total_all - caught_all), Colors.RED)}")
+    print(color("\n=== MUTATION SUMMARY ===", Colors.CYAN))
+    print(f"Total Mutants      : {total}")
+    print(f"Valid Mutants      : {compiled}")
+    print(f"  Caught           : {color(str(caught), Colors.GREEN)}")
+    print(f"  Uncaught         : {color(str(uncaught), Colors.RED)}")
+    print(f"Invalid Mutants    : {color(str(invalid), Colors.YELLOW)}")
 
-    if total_all > 0:
-        score = (caught_all / total_all) * 100
-    else:
-        score = 0
+    score = (caught / compiled * 100) if compiled > 0 else 0
+    print(f"Score (valid only) : {color(f'{score:.2f}%', Colors.BOLD)}")
 
-    print(f"Score           : {color(f'{score:.2f}%', Colors.BOLD)}")
-    print("\nDone \n")
+    end_time = time.time()
+    duration = end_time - start_time
+    print(color(f"\nMutation Analysis Completed in : {duration:.2f}s", Colors.CYAN))
 
 
 if __name__ == "__main__":
