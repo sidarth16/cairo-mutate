@@ -37,6 +37,7 @@ def restore_all_files():
     for original, backup in backups:
         if os.path.exists(backup):
             shutil.copy(backup, original)
+    restored = True
     if backups:
         print(color("\n✔ Restored original files", Colors.GREEN))
 
@@ -47,11 +48,12 @@ def cleanup_backups():
 
 def handle_interrupt(sig, frame):
     print(color("\n\n⚠ Interrupted! Restoring files...", Colors.YELLOW))
-    # restore_all_files()
-    # cleanup_backups()
+    restore_all_files()
+    cleanup_backups()
     sys.exit(1)
 
 signal.signal(signal.SIGINT, handle_interrupt)
+signal.signal(signal.SIGTERM, handle_interrupt)
 
 # ===== CATEGORY TRACKING =====
 uncaught_by_category = {
@@ -74,8 +76,11 @@ def get_category(name):
 
 # ===== RUN TEST =====
 def run_snforge():
+    env = os.environ.copy()
+    env["PATH"] = f"{os.path.expanduser('~')}/.asdf/shims:{env.get('PATH', '')}"
     result = subprocess.run(
         ["snforge", "test"],
+        env=env,
         capture_output=True,
         text=True
     )
