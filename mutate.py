@@ -1,59 +1,78 @@
+import os
+import re
+import signal
 import shutil
 import subprocess
-import re
-import time
-import os
-import signal
 import sys
+import time
+from pathlib import Path
 
-TARGET_FILE = "src/lib.cairo"
-BACKUP_FILE = TARGET_FILE + ".bak"
+SCRIPT_DIR = Path(__file__).resolve().parent
+SOURCE_ROOT = SCRIPT_DIR / "src"
+
+TARGET_FILE = None
+BACKUP_FILE = None
 
 # ===== BACKUP TRACKING =====
 backups = set()
 restored = False
+
 
 # ===== COLORS =====
 class Colors:
     RED = "\033[91m"
     GREEN = "\033[92m"
     YELLOW = "\033[93m"
+    BLUE = "\033[94m"
     CYAN = "\033[96m"
     PURPLE = "\033[95m"
     GREY = "\033[90m"
     BOLD = "\033[1m"
     RESET = "\033[0m"
 
+
 def color(text, c):
     return f"{c}{text}{Colors.RESET}"
 
+
+def set_target_file(file_path):
+    global TARGET_FILE, BACKUP_FILE
+    TARGET_FILE = file_path
+    BACKUP_FILE = Path(str(file_path) + ".bak")
+
+
 # ===== SAFE RESTORE =====
-def restore_all_files():
+def restore_all_files(verbose=False):
     global restored
 
     if restored:
         return
-    
+
     for original, backup in backups:
-        if os.path.exists(backup):
+        if backup.exists():
             shutil.copy(backup, original)
+
     restored = True
-    if backups:
+    if verbose and backups:
         print(color("\n✔ Restored original files", Colors.GREEN))
+
 
 def cleanup_backups():
     for _, backup in backups:
-        if os.path.exists(backup):
-            os.remove(backup)
+        if backup.exists():
+            backup.unlink()
+
 
 def handle_interrupt(sig, frame):
     print(color("\n\n⚠ Interrupted! Restoring files...", Colors.YELLOW))
-    restore_all_files()
+    restore_all_files(verbose=True)
     cleanup_backups()
     sys.exit(1)
 
+
 signal.signal(signal.SIGINT, handle_interrupt)
 signal.signal(signal.SIGTERM, handle_interrupt)
+
 
 # ===== CATEGORY TRACKING =====
 uncaught_by_category = {
@@ -62,6 +81,7 @@ uncaught_by_category = {
     "CONDITIONAL LOGIC": 0,
     "STATE UPDATES": 0,
 }
+
 
 def get_category(name):
     if name in ["AS-REM", "AS-FLIP"]:
@@ -74,17 +94,20 @@ def get_category(name):
         return "STATE UPDATES"
     return None
 
+
 # ===== RUN TEST =====
 def run_snforge():
     env = os.environ.copy()
     env["PATH"] = f"{os.path.expanduser('~')}/.asdf/shims:{env.get('PATH', '')}"
     result = subprocess.run(
         ["snforge", "test"],
+        cwd=SCRIPT_DIR,
         env=env,
         capture_output=True,
-        text=True
+        text=True,
     )
     return result.stdout + result.stderr
+
 
 # ===== RESULT =====
 def process_result(output, compiled, caught):
@@ -99,6 +122,7 @@ def process_result(output, compiled, caught):
 
     return color("✘ Uncaught", Colors.RED), compiled, caught
 
+
 # ===== SCORE COLOR =====
 def color_score(score):
     if score >= 90:
@@ -107,6 +131,7 @@ def color_score(score):
         return color(f"{score:.2f}%", Colors.YELLOW)
     else:
         return color(f"{score:.2f}%", Colors.RED)
+
 
 # ===== SUMMARY =====
 def print_summary(name, total, compiled, caught):
@@ -119,13 +144,120 @@ def print_summary(name, total, compiled, caught):
 
     if compiled > 0:
         print(
-            color(f"[{name}] mutated {compiled} → caught {caught}/{compiled}", Colors.PURPLE + Colors.BOLD),
-            color(f" | {color('score', Colors.GREY)}: {color_score(score)}", Colors.BOLD)
+            color(
+                f"[{name}] mutated {compiled} → caught {caught}/{compiled}",
+                Colors.PURPLE + Colors.BOLD,
+            ),
+            color(f" | {color('score', Colors.GREY)}: {color_score(score)}", Colors.BOLD),
         )
     else:
         print(color(f"[{name}] no valid mutations", Colors.PURPLE + Colors.BOLD))
 
-# ===== MUTATORS =====
+
+def file_label(file_path):
+    try:
+        return str(file_path.relative_to(SCRIPT_DIR))
+    except ValueError:
+        return file_path.name
+
+
+def format_score_value(compiled, caught):
+    score = (caught / compiled * 100) if compiled > 0 else 0
+    return score
+
+
+def print_filewise_table(results):
+    if not results:
+        return
+
+    headers = ["File", "Mutants", "Caught", "Uncaught", "Score"]
+    rows = []
+
+    total_compiled = 0
+    total_caught = 0
+
+    for item in results:
+        compiled = item["compiled"]
+        caught = item["caught"]
+        uncaught = compiled - caught
+        score = format_score_value(compiled, caught)
+        total_compiled += compiled
+        total_caught += caught
+        rows.append([
+            file_label(item["file"]),
+            str(compiled),
+            str(caught),
+            str(uncaught),
+            f"{score:.2f}%",
+        ])
+
+    total_uncaught = total_compiled - total_caught
+    total_score = format_score_value(total_compiled, total_caught)
+    rows.append([
+        "Total",
+        str(total_compiled),
+        str(total_caught),
+        str(total_uncaught),
+        f"{total_score:.2f}%",
+    ])
+
+    widths = [len(h) for h in headers]
+    for row in rows:
+        for idx, cell in enumerate(row):
+            widths[idx] = max(widths[idx], len(cell))
+
+    def border(char="-"):
+        return "+" + "+".join(char * (width + 2) for width in widths) + "+"
+
+    def score_color(score):
+        if score >= 90:
+            return Colors.GREEN
+        if score >= 70:
+            return Colors.YELLOW
+        return Colors.RED
+
+    def render_cell(idx, value, row_type="file"):
+        padded = f"{value:<{widths[idx]}}"
+
+        if row_type == "header":
+            return color(f" {padded} ", Colors.BOLD)
+
+        if idx == 2:
+            return color(f" {padded} ", Colors.GREEN)
+        if idx == 3:
+            return color(f" {padded} ", Colors.RED)
+        if idx == 4:
+            if row_type == "total":
+                return color(f" {padded} ", Colors.BOLD + score_color(float(value.rstrip('%'))))
+            return color(f" {padded} ", score_color(float(value.rstrip('%'))))
+
+        if row_type == "total":
+            return color(f" {padded} ", Colors.BOLD)
+        return f" {padded} "
+
+    def render_row(values, row_type="file"):
+        cells = [render_cell(idx, value, row_type=row_type) for idx, value in enumerate(values)]
+        return "|" + "|".join(cells) + "|"
+
+    print(color("\n=== FILEWISE SUMMARY ===", Colors.CYAN))
+    print(border("-"))
+    print(render_row(headers, row_type="header"))
+    print(border("-"))
+    for row in rows[:-1]:
+        print(render_row(row))
+    print(border("-"))
+    print(render_row(rows[-1], row_type="total"))
+    print(border("-"))
+
+
+def ensure_backup(file_path):
+    backup_path = Path(str(file_path) + ".bak")
+    if not backup_path.exists():
+        shutil.copy(file_path, backup_path)
+    backups.add((file_path, backup_path))
+    return backup_path
+
+
 def mutate_as_rem():
     with open(TARGET_FILE) as f:
         lines = f.read().split("\n")
@@ -149,7 +281,11 @@ def mutate_as_rem():
         output = run_snforge()
         status, compiled, caught = process_result(output, compiled, caught)
 
-        print(f"[{name}] {line.strip()} -> removed  => {status}")
+        line_out = f"[{name}] {line.strip()} -> let _ = 0; => {status}"
+        if "Compile Error" in status:
+            print(color(line_out, Colors.GREY))
+        else:
+            print(line_out)
 
         if "Uncaught" in status:
             uncaught_by_category["ASSERT / VALIDATION"] += 1
@@ -188,7 +324,11 @@ def mutate_as_flip():
             output = run_snforge()
             status, compiled, caught = process_result(output, compiled, caught)
 
-            print(f"[{name}] {line.strip()} => {status}")
+            line_out = f"[{name}] {line.strip()} -> {mutated[i].strip()} => {status}"
+            if "Compile Error" in status:
+                print(color(line_out, Colors.GREY))
+            else:
+                print(line_out)
 
             if "Uncaught" in status:
                 uncaught_by_category["ASSERT / VALIDATION"] += 1
@@ -225,7 +365,11 @@ def mutate_generic(name, pattern, transform):
             output = run_snforge()
             status, compiled, caught = process_result(output, compiled, caught)
 
-            print(f"[{name}] {line.strip()} => {status}")
+            line_out = f"[{name}] {line.strip()} -> {mutated[i].strip()} => {status}"
+            if "Compile Error" in status:
+                print(color(line_out, Colors.GREY))
+            else:
+                print(line_out)
 
             if "Uncaught" in status:
                 cat = get_category(name)
@@ -249,41 +393,80 @@ def mutate_op_ari():
 def mutate_op_asg():
     return mutate_generic("OP-ASG", r"(\+=|-=)", lambda op: "=")
 
+
+def mutate_file(file_path):
+    global TARGET_FILE, BACKUP_FILE
+
+    previous_target = TARGET_FILE
+    previous_backup = BACKUP_FILE
+
+    set_target_file(file_path)
+    ensure_backup(TARGET_FILE)
+
+    try:
+        print(color(f"\n📄 Mutating {file_label(file_path)}", Colors.BOLD))
+        print(color(f"--- File Start: {file_label(file_path)} ---", Colors.CYAN))
+
+        file_total = file_compiled = file_caught = 0
+
+        for fn in [
+            mutate_as_rem,
+            mutate_as_flip,
+            mutate_op_cmp,
+            mutate_op_ari,
+            mutate_op_asg,
+        ]:
+            t, c, ca = fn()
+            file_total += t
+            file_compiled += c
+            file_caught += ca
+
+        print(color(f"Finished mutating {file_label(file_path)}", Colors.GREY))
+
+        return {
+            "file": file_path,
+            "total": file_total,
+            "compiled": file_compiled,
+            "caught": file_caught,
+        }
+    finally:
+        TARGET_FILE = previous_target
+        BACKUP_FILE = previous_backup
+
+
+def discover_cairo_files():
+    if not SOURCE_ROOT.exists():
+        return []
+    return sorted(
+        [path for path in SOURCE_ROOT.rglob("*.cairo") if path.is_file()]
+    )
+
+
 # ===== MAIN =====
 def main():
     print(color("\n🚀 Starting Cairo Mutation Testing...\n", Colors.BOLD))
     start_time = time.time()
 
-    # Create backup ONCE
-    if not os.path.exists(BACKUP_FILE):
-        shutil.copy(TARGET_FILE, BACKUP_FILE)
-    backups.add((TARGET_FILE, BACKUP_FILE))
+    cairo_files = discover_cairo_files()
+    if not cairo_files:
+        print(color("No .cairo files found under src/", Colors.GREY))
+        return
 
-    total = compiled = caught = 0
+    results = []
+    for file_path in cairo_files:
+        results.append(mutate_file(file_path))
 
-    for fn in [
-        mutate_as_rem,
-        mutate_as_flip,
-        mutate_op_cmp,
-        mutate_op_ari,
-        mutate_op_asg,
-    ]:
-        t, c, ca = fn()
-        total += t
-        compiled += c
-        caught += ca
-
+    total = sum(item["total"] for item in results)
+    compiled = sum(item["compiled"] for item in results)
+    caught = sum(item["caught"] for item in results)
     uncaught = compiled - caught
     score = (caught / compiled * 100) if compiled > 0 else 0
 
-    print(color("\n=== MUTATION SUMMARY ===", Colors.CYAN))
-    print(f"\nValid Mutants : {compiled}")
-    print(f"Caught        : {caught}")
-    print(f"Uncaught      : {uncaught}")
-    print(f"Score         : {color_score(score)}")
+    print_filewise_table(results)
 
     duration = time.time() - start_time
-    print(color(f"\nCompleted in {duration:.2f}s\n", Colors.CYAN))
+    print(f"Final Mutation Score : {color_score(score)}")
+    print(color(f"Completed in {duration:.2f}s", Colors.BLUE if hasattr(Colors, "BLUE") else Colors.CYAN))
 
 
 if __name__ == "__main__":
