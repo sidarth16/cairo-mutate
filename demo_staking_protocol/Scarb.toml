@@ -1,0 +1,25 @@
+[package]
+name = "demo_staking_protocol"
+version = "0.1.0"
+edition = "2024_07"
+
+[dependencies]
+starknet = "2.16.1"
+
+[dev-dependencies]
+snforge_std = "0.58.1"
+assert_macros = "2.16.1"
+
+[[target.starknet-contract]]
+sierra = true
+
+[scripts]
+test = "snforge test"
+
+[tool.scarb]
+allow-prebuilt-plugins = ["snforge_std"]
+
+[profile.dev.cairo]
+unstable-add-statements-code-locations-debug-info = true
+unstable-add-statements-functions-debug-info = true
+inlining-strategy = "avoid"
