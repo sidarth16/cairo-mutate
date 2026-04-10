@@ -1,3 +1,4 @@
+import argparse
 import os
 import re
 import signal
@@ -12,6 +13,7 @@ SOURCE_ROOT = SCRIPT_DIR / "src"
 
 TARGET_FILE = None
 BACKUP_FILE = None
+RUN_TIMEOUT_SECONDS = 30
 
 # ===== BACKUP TRACKING =====
 backups = set()
@@ -96,21 +98,36 @@ def get_category(name):
 
 
 # ===== RUN TEST =====
-def run_snforge():
+def run_snforge(timeout_seconds):
     env = os.environ.copy()
     env["PATH"] = f"{os.path.expanduser('~')}/.asdf/shims:{env.get('PATH', '')}"
-    result = subprocess.run(
-        ["snforge", "test"],
-        cwd=SCRIPT_DIR,
-        env=env,
-        capture_output=True,
-        text=True,
-    )
-    return result.stdout + result.stderr
+    try:
+        result = subprocess.run(
+            ["snforge", "test"],
+            cwd=SCRIPT_DIR,
+            env=env,
+            capture_output=True,
+            text=True,
+            timeout=timeout_seconds,
+        )
+        return result.stdout + result.stderr, False
+    except subprocess.TimeoutExpired as exc:
+        def normalize(value):
+            if value is None:
+                return ""
+            if isinstance(value, bytes):
+                return value.decode("utf-8", errors="replace")
+            return value
+
+        output = normalize(exc.stdout) + normalize(exc.stderr)
+        return output, True
 
 
 # ===== RESULT =====
-def process_result(output, compiled, caught):
+def process_result(output, compiled, caught, timed_out=False):
+    if timed_out:
+        return color("Timeout", Colors.YELLOW), compiled, caught
+
     if "error" in output.lower():
         return color("Compile Error", Colors.GREY), compiled, caught
 
@@ -133,14 +150,30 @@ def color_score(score):
         return color(f"{score:.2f}%", Colors.RED)
 
 
+# ===== LINE RENDERING =====
+def render_mutant_line(name, line_no, before, after, status, timed_out=False):
+    prefix = f"[{name}] L{line_no}: {before} → {after} => "
+    if "Compile Error" in status:
+        return color(prefix + "Compile Error", Colors.GREY)
+    if timed_out:
+        return color(prefix, Colors.GREY) + color("Timeout", Colors.YELLOW)
+    return prefix + status
+
+
 # ===== SUMMARY =====
-def print_summary(name, total, compiled, caught):
+def print_summary(name, total, compiled, caught, timeout_count=0):
     uncaught = compiled - caught
-    invalid = total - compiled
+    invalid = total - compiled - timeout_count
+    skipped = invalid + timeout_count
     score = (caught / compiled * 100) if compiled > 0 else 0
 
-    if invalid > 0:
-        print(f"[{name}]", color(f"{invalid} skipped (compile error)", Colors.GREY))
+    if skipped > 0:
+        parts = []
+        if invalid > 0:
+            parts.append(f"{invalid} compile error")
+        if timeout_count > 0:
+            parts.append(f"{timeout_count} timeout")
+        print(color(f"[{name}] {skipped} skipped ({', '.join(parts)})", Colors.GREY))
 
     if compiled > 0:
         print(
@@ -270,7 +303,7 @@ def mutate_as_rem():
     with open(TARGET_FILE) as f:
         lines = f.read().split("\n")
 
-    total = compiled = caught = 0
+    total = compiled = caught = timeouts = 0
     name = "AS-RM"
 
     print(color("\n--- AS-REM (Assert Removal) ---", Colors.CYAN))
@@ -286,29 +319,27 @@ def mutate_as_rem():
         with open(TARGET_FILE, "w") as f:
             f.write("\n".join(mutated))
 
-        output = run_snforge()
-        status, compiled, caught = process_result(output, compiled, caught)
+        output, timed_out = run_snforge(RUN_TIMEOUT_SECONDS)
+        status, compiled, caught = process_result(output, compiled, caught, timed_out)
+        if timed_out:
+            timeouts += 1
 
-        line_out = f"[{name}] L{i + 1}: {line.strip()} → let _ = 0; => {status}"
-        if "Compile Error" in status:
-            print(color(line_out, Colors.GREY))
-        else:
-            print(line_out)
+        print(render_mutant_line(name, i + 1, line.strip(), "let _ = 0;", status, timed_out))
 
         if "Uncaught" in status:
             uncaught_by_category["ASSERT / VALIDATION"] += 1
 
         shutil.copy(BACKUP_FILE, TARGET_FILE)
 
-    print_summary(name, total, compiled, caught)
-    return total, compiled, caught
+    print_summary(name, total, compiled, caught, timeouts)
+    return total, compiled, caught, timeouts
 
 
 def mutate_as_flip():
     with open(TARGET_FILE) as f:
         lines = f.read().split("\n")
 
-    total = compiled = caught = 0
+    total = compiled = caught = timeouts = 0
     name = "AS-FLIP"
     flips = {
         "==": "!=",
@@ -337,29 +368,27 @@ def mutate_as_flip():
             with open(TARGET_FILE, "w") as f:
                 f.write("\n".join(mutated))
 
-            output = run_snforge()
-            status, compiled, caught = process_result(output, compiled, caught)
+            output, timed_out = run_snforge(RUN_TIMEOUT_SECONDS)
+            status, compiled, caught = process_result(output, compiled, caught, timed_out)
+            if timed_out:
+                timeouts += 1
 
-            line_out = f"[{name}] L{i + 1}: {line.strip()} → {mutated[i].strip()} => {status}"
-            if "Compile Error" in status:
-                print(color(line_out, Colors.GREY))
-            else:
-                print(line_out)
+            print(render_mutant_line(name, i + 1, line.strip(), mutated[i].strip(), status, timed_out))
 
             if "Uncaught" in status:
                 uncaught_by_category["ASSERT / VALIDATION"] += 1
 
             shutil.copy(BACKUP_FILE, TARGET_FILE)
 
-    print_summary(name, total, compiled, caught)
-    return total, compiled, caught
+    print_summary(name, total, compiled, caught, timeouts)
+    return total, compiled, caught, timeouts
 
 
 def mutate_generic(name, pattern, transform):
     with open(TARGET_FILE) as f:
         lines = f.read().split("\n")
 
-    total = compiled = caught = 0
+    total = compiled = caught = timeouts = 0
 
     full_name = {
         "OP-CMP": "OP-CMP (Comparison Operator Mutation)",
@@ -383,14 +412,12 @@ def mutate_generic(name, pattern, transform):
             with open(TARGET_FILE, "w") as f:
                 f.write("\n".join(mutated))
 
-            output = run_snforge()
-            status, compiled, caught = process_result(output, compiled, caught)
+            output, timed_out = run_snforge(RUN_TIMEOUT_SECONDS)
+            status, compiled, caught = process_result(output, compiled, caught, timed_out)
+            if timed_out:
+                timeouts += 1
 
-            line_out = f"[{name}] L{i + 1}: {line.strip()} → {mutated[i].strip()} => {status}"
-            if "Compile Error" in status:
-                print(color(line_out, Colors.GREY))
-            else:
-                print(line_out)
+            print(render_mutant_line(name, i + 1, line.strip(), mutated[i].strip(), status, timed_out))
 
             if "Uncaught" in status:
                 cat = get_category(name)
@@ -399,8 +426,8 @@ def mutate_generic(name, pattern, transform):
 
             shutil.copy(BACKUP_FILE, TARGET_FILE)
 
-    print_summary(name, total, compiled, caught)
-    return total, compiled, caught
+    print_summary(name, total, compiled, caught, timeouts)
+    return total, compiled, caught, timeouts
 
 
 def mutate_op_cmp():
@@ -427,7 +454,7 @@ def mutate_file(file_path):
     try:
         print(color(f"\n▶ Mutating {file_label(file_path)}", Colors.YELLOW + Colors.BOLD))
 
-        file_total = file_compiled = file_caught = 0
+        file_total = file_compiled = file_caught = file_timeouts = 0
 
         for fn in [
             mutate_as_rem,
@@ -436,10 +463,11 @@ def mutate_file(file_path):
             mutate_op_ari,
             mutate_op_asg,
         ]:
-            t, c, ca = fn()
+            t, c, ca, to = fn()
             file_total += t
             file_compiled += c
             file_caught += ca
+            file_timeouts += to
 
         print(color(f"\n ✔ Finished mutating {file_label(file_path)}", Colors.GREY))
 
@@ -448,6 +476,7 @@ def mutate_file(file_path):
             "total": file_total,
             "compiled": file_compiled,
             "caught": file_caught,
+            "timeouts": file_timeouts,
         }
     finally:
         TARGET_FILE = previous_target
@@ -464,6 +493,12 @@ def discover_cairo_files():
 
 # ===== MAIN =====
 def main():
+    global RUN_TIMEOUT_SECONDS
+    parser = argparse.ArgumentParser(description="Cairo mutation testing with timeout support")
+    parser.add_argument("--timeout", type=int, default=30, help="Timeout in seconds for each snforge run")
+    args = parser.parse_args()
+    RUN_TIMEOUT_SECONDS = args.timeout
+
     print(color("\n🚀 Starting Cairo Mutation Testing...\n", Colors.BOLD))
     start_time = time.time()
 
@@ -479,6 +514,7 @@ def main():
     total = sum(item["total"] for item in results)
     compiled = sum(item["compiled"] for item in results)
     caught = sum(item["caught"] for item in results)
+    timeouts = sum(item.get("timeouts", 0) for item in results)
     uncaught = compiled - caught
     score = (caught / compiled * 100) if compiled > 0 else 0
 
@@ -486,6 +522,8 @@ def main():
 
     duration = time.time() - start_time
     print(f"Final Mutation Score : {color_score(score)}")
+    if timeouts > 0:
+        print(color(f"Timeout mutants    : {timeouts}", Colors.YELLOW + Colors.BOLD))
     print(color(f"\nCompleted in {duration:.2f}s", Colors.BLUE if hasattr(Colors, "BLUE") else Colors.CYAN))
 
 
