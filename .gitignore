@@ -1,0 +1,7 @@
+__pycache__/
+*.pyc
+*.pyo
+*.bak
+**/target/
+**/snfoundry_trace/
+**/coverage-report/
