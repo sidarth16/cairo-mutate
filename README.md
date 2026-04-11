@@ -9,7 +9,7 @@
 
 ---
 <div align="center">
-  <img src="https://raw.githubusercontent.com/sidarths/cairo-mutate/main/assets/logo.png"
+  <img src="https://i.imgur.com/0AlyT8u.png"
        alt="cairo-mutate"  
        style="width: 280px; border-radius: 10px;"  />
 </div>
@@ -51,7 +51,7 @@ cairo-mutate demo_staking_protocol -v
 
 Expected output:
 
-<img src="https://raw.githubusercontent.com/sidarths/cairo-mutate/main/assets/demo-out.png"
+<img src="https://i.imgur.com/KUMgksP.png"
        alt="cairo-mutate"  
        style="width: 440px; border-radius: 10px;"  />
 
@@ -197,19 +197,19 @@ cairo-mutate --list-mutators
 
 Example mutant line:
 
-<img src="https://raw.githubusercontent.com/sidarths/cairo-mutate/main/assets/line.png"
+<img src="https://i.imgur.com/z0Um43r.png"
      alt="mutant-line"
      style="width: 650px;" />
 
 Example skipped summary:
 
-<img src="https://raw.githubusercontent.com/sidarths/cairo-mutate/main/assets/skip.png"
+<img src="https://i.imgur.com/TtRvk9p.png"
      alt="skip-summary"
      style="width: 300px;" />
 
 Example file-wise report:
 
-<img src="https://raw.githubusercontent.com/sidarths/cairo-mutate/main/assets/report.png"
+<img src="https://i.imgur.com/DXrzSLj.png"
      alt="report-summary"
      style="width: 350px;" />
 
