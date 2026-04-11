@@ -9,7 +9,7 @@
 
 ---
 <div align="center">
-  <img src="assets/logo.png"
+  <img src="https://raw.githubusercontent.com/sidarths/cairo-mutate/main/assets/logo.png"
        alt="cairo-mutate"  
        style="width: 280px; border-radius: 10px;"  />
 </div>
@@ -51,7 +51,7 @@ cairo-mutate demo_staking_protocol -v
 
 Expected output:
 
-<img src="assets/demo-out.png"
+<img src="https://raw.githubusercontent.com/sidarths/cairo-mutate/main/assets/demo-out.png"
        alt="cairo-mutate"  
        style="width: 440px; border-radius: 10px;"  />
 
@@ -197,19 +197,19 @@ cairo-mutate --list-mutators
 
 Example mutant line:
 
-<img src="assets/line.png"
+<img src="https://raw.githubusercontent.com/sidarths/cairo-mutate/main/assets/line.png"
      alt="mutant-line"
-     style="width: 620px;" />
+     style="width: 650px;" />
 
 Example skipped summary:
 
-<img src="assets/skip.png"
+<img src="https://raw.githubusercontent.com/sidarths/cairo-mutate/main/assets/skip.png"
      alt="skip-summary"
      style="width: 300px;" />
 
 Example file-wise report:
 
-<img src="assets/report.png"
+<img src="https://raw.githubusercontent.com/sidarths/cairo-mutate/main/assets/report.png"
      alt="report-summary"
      style="width: 350px;" />
 
@@ -219,6 +219,21 @@ Example file-wise report:
 The repository includes [`demo_staking_protocol/`](./demo_staking_protocol), a small Starknet `snforge` project used to demonstrate the tool.
 
 It contains two contracts (`Vault`, `StakeVault`) to demonstrate mutation testing on permissions and time-based logic.
+
+### Coverage vs Mutation
+
+The demo project reports high test coverage:
+
+- Line Coverage: **97%**
+- Function Coverage: **100%**
+
+But mutation testing reveals a different picture:
+
+- Mutation Score: **65%**
+
+This means many injected faults were **not detected by the test suite**, despite near-complete coverage.
+
+> High coverage does not guarantee strong tests — mutation testing exposes that gap.
 
 ## Safety Behavior
 
