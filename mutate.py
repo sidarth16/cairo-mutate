@@ -32,10 +32,17 @@ def resolve_mutators(spec: str | None):
 
 
 def list_mutators():
-    print("Available mutators:")
+    rows = [MUTATOR_REGISTRY[name] for name in DEFAULT_MUTATORS]
+    code_width = max(len(item["label"]) for item in rows)
+    name_width = max(len(item["description"]) for item in rows)
+
+    print(color("\nAvailable Mutators : \n", Colors.CYAN + Colors.BOLD))
+    print(color(f"{'CODE':<{code_width}}  {'DESCRIPTION':<{name_width}}", Colors.GREY + Colors.BOLD))
+    print(color(f"{'-' * code_width}  {'-' * name_width}", Colors.GREY))
     for name in DEFAULT_MUTATORS:
         info = MUTATOR_REGISTRY[name]
-        print(f"  {info['name']:<10} - {info['description']}")
+        code = color(info["label"], Colors.CYAN + Colors.BOLD)
+        print(f"{code:<{code_width + 9}}  {info['description']:<{name_width}}")
 
 
 def run_project_check(ctx, label):
