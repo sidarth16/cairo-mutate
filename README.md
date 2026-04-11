@@ -1,25 +1,37 @@
 # cairo-mutate
+> **Mutation-testing for Starknet contracts**
 
-`cairo-mutate` is a mutation-testing tool for Starknet/Cairo contracts.
+<div align="center">
+  <img src="assets/logo.png"
+       alt="cairo-mutate"  
+       style="width: 280px; border-radius: 10px;"  />
+</div>
 
-It brings mutation testing to Starknet, giving developers a measurable signal of test quality.
 
-This is a focused tool for the Starknet ecosystem, built to make test quality visible instead of assumed.
+`cairo-mutate` brings mutation testing to Starknet, giving developers a measurable signal of test quality.
 
-This is one of the first mutation testing tools built specifically for the Starknet ecosystem.
+Instead of asking:
 
-Instead of asking “do the tests pass?”, it asks:
+> “Do the tests pass? What is the coverage?”
 
-> if the contract were wrong, would the tests notice?
+it asks:
 
-It deliberately breaks contract code, reruns the test suite, and shows how many of those injected faults your tests actually catch.
+> “If the contract were wrong, would the tests notice?”
 
-That makes `cairo-mutate` useful for finding weak assertions, missing edge cases, brittle state checks, and places where a test suite looks healthy but does not really protect contract behavior.
+The tool mutates contract code, reruns the test suite, and measures how many injected faults are actually caught.
 
-Even a test suite with 100% coverage can still miss important contract invariants.
-`cairo-mutate` helps reveal that gap by checking whether the tests fail when those invariants are broken.
+That helps uncover:
+- weak assertions
+- missing edge cases
+- broken invariants
+- brittle state checks
+- false confidence from high coverage
 
-This is the current MVP: a stable, string-based mutation engine with file-wise reporting, safe restore behavior, timeout handling, and a CLI that can run against any Starknet project root.
+Even a test suite with 100% coverage can still miss important behavioral invariants. `cairo-mutate` helps reveal that gap by checking whether tests fail when those invariants are broken.
+
+### Current Status (MVP)
+A stable, string-based mutation engine with file-wise reporting, safe restore behavior, timeout handling, and a CLI that can run against any Starknet project root.
+
 
 ## Quick Demo
 
@@ -27,16 +39,14 @@ This is the current MVP: a stable, string-based mutation engine with file-wise r
 cairo-mutate demo_staking_protocol -v
 ```
 
-Expected flow:
+Expected output:
 
-```text
-Found 2 Cairo files
-▶ Mutating src/vault.cairo
-▶ Mutating src/stake_vault.cairo
+<img src="assets/demo-out.png"
+       alt="cairo-mutate"  
+       style="width: 320px; border-radius: 10px;"  />
 
-Final Mutation Score: 61.54%
-Completed in 41.71s
-```
+> Screenshot shows part of the `-v` output for readability. Use `-vv` for the full mutation log.
+
 
 ## Use Cases
 
@@ -75,7 +85,7 @@ The current MVP uses the following mutators:
 ### What each one means
 
 - `AS-REM`: replaces an `assert` body with a no-op. This checks whether your tests depend on the assertion actually enforcing invariants.
-- `AS-FLIP`: flips assertion comparisons, such as `== ↔ !=` and `> ↔ <`. This checks whether tests catch broken validation logic.
+- `AS-FLIP`: flips assertion comparisons, such as `== ↔ !=` and `> ↔ <`.
 - `OP-EQ`: flips equality and inequality operators outside `assert` expressions.
 - `OP-ARI`: flips arithmetic operators like `+ ↔ -` outside assertions.
 - `OP-ASG`: mutates assignment-style operations such as `+=` and `-=` into plain assignment behavior.
@@ -84,17 +94,14 @@ These mutators are intentionally string-based for V1. That keeps the tool fast a
 
 ## Why This Matters For Starknet
 
-Starknet projects need more than passing tests. They need confidence that the tests actually catch broken permissions, broken state transitions, and broken invariants.
-
-Even a suite with 100% coverage can still miss the invariants that matter most.
-`cairo-mutate` is built to expose that gap.
+Starknet projects need more than passing tests. They need confidence that tests actually catch broken permissions, broken state transitions, and broken invariants.
 
 `cairo-mutate` turns that into a measurable workflow:
 
 - inject a fault
 - rerun the suite
 - record whether the test caught it
-- score the test suite by mutation resistance
+- score the suite by mutation resistance
 
 That makes the tool useful as a developer aid, a CI signal, and a reviewer-friendly demo for Starknet ecosystem grants.
 
@@ -112,6 +119,8 @@ cairo-mutate <target> [OPTIONS]
 
 - `--test-cmd "snforge test"`  
   Custom test command to run after each mutant.
+- `--file src/lib.cairo`  
+  Mutate a single Cairo file relative to the project root.
 - `--mutators as_rem,as_flip,op_eq`  
   Limit the run to specific mutators.
 - `--timeout 20`  
@@ -131,15 +140,10 @@ cairo-mutate <target> [OPTIONS]
 - `-v`: prints file start/finish markers, file counts, and per-mutator summaries.
 - `-vv`: prints the full mutant log for each mutation, plus summaries and the final report.
 
-### Usage
-
-```bash
-cairo-mutate <target> [OPTIONS]
-```
-
 Examples:
 
 ```bash
+cairo-mutate demo_staking_protocol --file src/lib.cairo --safe -v
 cairo-mutate demo_staking_protocol --safe -v
 cairo-mutate demo_staking_protocol --test-cmd "snforge test" --timeout 20 -vv
 cairo-mutate demo_staking_protocol --mutators as_rem,as_flip,op_eq --safe
@@ -150,33 +154,22 @@ cairo-mutate --list-mutators
 
 Example mutant line:
 
-```text
-[AS-FLIP] L43: assert(amount != 0, 'amount must be > 0'); → assert(amount == 0, 'amount must be > 0'); => ✔ Caught
-```
+<img src="assets/line.png"
+     alt="mutant-line"
+     style="width: 620px;" />
 
 Example skipped summary:
 
-```text
-[OP-ARI] 4 skipped (2 compile error, 2 timeout)
-```
+<img src="assets/skip.png"
+     alt="skip-summary"
+     style="width: 300px;" />
 
 Example file-wise report:
 
-```text
-➤ Mutation Report
-| File              | Mutants | Caught | Uncaught | Score  |
-| src/vault.cairo   | 8       | 5      | 3        | 62.50% |
-| src/stake_vault.cairo | 5   | 3      | 2        | 60.00% |
-| Total             | 13      | 8      | 5        | 61.54% |
-```
+<img src="assets/report.png"
+     alt="report-summary"
+     style="width: 350px;" />
 
-Example footer:
-
-```text
-Final Mutation Score : 61.54%
-Timeouts             : 7
-Completed in 41.71s
-```
 
 ## Demo Project
 
@@ -266,7 +259,6 @@ This is useful for CI, PR checks, and grant demos where you want to prove that t
 This is still an MVP, so a few limits are intentional:
 
 - mutations are string-based, not AST-based
-- `OP-REL` is intentionally postponed for now because it is noisy without AST-aware matching
 - the tool focuses on `src/` files
 - the current engine is tuned for practicality and clarity, not full Cairo syntax coverage
 
@@ -299,43 +291,8 @@ Cairo-aware AST mutation engine with:
 
 A full mutation and analysis framework for Starknet contracts.
 
-## What We Tightened
-
-These are the design choices that make the MVP feel deliberate instead of noisy:
-
-- Mutations are scoped to `src/` so the tool does not wander into tests, backups, or unrelated files.
-- `AS-REM` and `AS-FLIP` focus on assertion logic, which keeps the signal centered on contract validation.
-- `OP-EQ` is narrow by design and only targets equality / inequality, which matches the detector name.
-- `OP-REL` was intentionally held back from the MVP because string-based matching caused too much compile-error noise.
-- Compile errors and timeouts are excluded from the mutation score, so the score reflects only meaningful test executions.
-- Backups and restore logic ensure source files are always put back even if the run is interrupted.
-- The CLI supports `--test-cmd`, `--mutators`, `--timeout`, and `--safe`, so the tool adapts to different Starknet projects without code changes.
-- `-v` and `-vv` give controlled visibility, which prevents the output from feeling frozen while still allowing deep inspection.
-- File start/finish markers, line numbers, and the file-wise table all make it easier to understand exactly what happened in a run.
-
-These choices reduce false positives, reduce false negatives caused by ambiguous matching, and make the output easier for users and reviewers to trust.
-
-## Why This Is More Than A Simple Script
-
-This project now behaves like a small developer tool rather than a one-off experiment:
-
-- modular mutators make the code easier to extend and review
-- progress markers keep runs from feeling frozen
-- safe mode validates the project before and after mutation
-- timeout handling prevents one bad mutant from blocking the entire run
-- file-wise scoring makes the output easier to compare across contracts
-- demo contracts show different bug classes instead of a single toy example
-
-That is the difference between “it runs” and “it is ready to show reviewers.”
-
 ## Project Layout
 
 - [`mutate.py`](./mutate.py) - root CLI orchestrator
 - [`mutators/`](./mutators) - one file per mutator plus shared runtime helpers
 - [`demo_staking_protocol/`](./demo_staking_protocol) - standalone Starknet demo project
-
-## Commit Story
-
-The repo keeps a staged build history in `code-bkp/` and a suggested commit sequence in `commit-plan.txt`.
-
-That history is intentional: it shows the tool evolving from a prototype into a usable MVP rather than appearing fully formed.
