@@ -1,6 +1,13 @@
-# cairo-mutate
-> **Mutation-testing for Starknet contracts**
+<!-- # `cairo-mutate`
+> **Mutation-testing for Starknet contracts** -->
 
+<h1 align="center"><b>cairo-mutate</b></h1>
+
+<p align="center">
+  <b> Mutation testing for Starknet contracts</b>
+</p>
+
+---
 <div align="center">
   <img src="assets/logo.png"
        alt="cairo-mutate"  
@@ -8,7 +15,10 @@
 </div>
 
 
-`cairo-mutate` brings mutation testing to Starknet, giving developers a measurable signal of test quality.
+
+**cairo-mutate** brings mutation testing to Starknet, giving developers a measurable signal of test quality.
+
+Find weak tests, missing edge cases, and false confidence from high coverage.
 
 Instead of asking:
 
@@ -47,13 +57,56 @@ Expected output:
 
 > Screenshot shows part of the `-v` output for readability. Use `-vv` for the full mutation log.
 
+## Requirements
+
+- Python 3.10+
+- `snforge`
+- `scarb` `2.14.0` or newer
+
+If your shell resolves the wrong `scarb`, use the asdf shim path:
+
+```bash
+env PATH="$HOME/.asdf/shims:$PATH" snforge test
+```
+
+## Installation
+
+### Install from PyPI
+
+Create a virtual environment and install the published package:
+
+```bash
+python3 -m venv .venv
+source .venv/bin/activate
+
+pip install cairo-mutate
+```
+
+### Install from Source
+
+Clone the repository and install it in editable mode:
+
+```bash
+git clone https://github.com/<your-username>/cairo-mutate
+cd cairo-mutate
+
+# create venv
+python3 -m venv .venv
+source .venv/bin/activate
+
+pip install -e .
+```
+
+The CLI entrypoint is `cairo-mutate`.
+
+When working from source, this is implemented via [`mutate.py`](./mutate.py).
 
 ## Use Cases
 
-- Evaluate test suite strength before deployment
-- Detect missing assertions and edge cases
-- Improve confidence in contract invariants
-- Demonstrate test quality in audits and grant reviews
+- Evaluate test strength before deployment  
+- Detect missing assertions and edge cases  
+- Improve confidence in contract invariants  
+- Demonstrate test quality in audits and grants  
 
 ## Features
 
@@ -76,34 +129,24 @@ Works on any Starknet project with `Scarb.toml`, `src/`, and `snforge` tests.
 
 The current MVP uses the following mutators:
 
-- `AS-REM` - Assert removal
-- `AS-FLIP` - Assert condition flip
-- `OP-EQ` - Equality operator mutation
-- `OP-ARI` - Arithmetic operator mutation
-- `OP-ASG` - Assignment operator mutation
 
-### What each one means
+| Code 	| Abbr 	| Desc |
+|---	|---	|---
+| `AS-REM` 	| Assert removal 	| replaces an `assert` body with a no-op
+| `AS-FLIP` 	| Assert condition flip 	| flips assertion comparisons, such as `== ↔ !=` and `> ↔ <`	|
+| `OP-EQ` 	| Equality operator mutation 	| flips equality and inequality operators outside `assert` expressions.	|
+| `OP-ARI` 	|  Arithmetic operator mutation 	| flips arithmetic operators like `+ ↔ -`	|
+| `OP-ASG` 	| Assignment operator mutation 	| mutates assignment-style operations such as `+=` and `-=` into plain assignment behavior	|
 
-- `AS-REM`: replaces an `assert` body with a no-op. This checks whether your tests depend on the assertion actually enforcing invariants.
-- `AS-FLIP`: flips assertion comparisons, such as `== ↔ !=` and `> ↔ <`.
-- `OP-EQ`: flips equality and inequality operators outside `assert` expressions.
-- `OP-ARI`: flips arithmetic operators like `+ ↔ -` outside assertions.
-- `OP-ASG`: mutates assignment-style operations such as `+=` and `-=` into plain assignment behavior.
 
 These mutators are intentionally string-based for V1. That keeps the tool fast and easy to understand while we build the Cairo-aware AST version later.
 
-## Why This Matters For Starknet
 
-Starknet projects need more than passing tests. They need confidence that tests actually catch broken permissions, broken state transitions, and broken invariants.
+## Why Mutation Testing?
 
-`cairo-mutate` turns that into a measurable workflow:
+Passing tests ≠ correct behavior.
 
-- inject a fault
-- rerun the suite
-- record whether the test caught it
-- score the suite by mutation resistance
-
-That makes the tool useful as a developer aid, a CI signal, and a reviewer-friendly demo for Starknet ecosystem grants.
+`cairo-mutate` measures whether your tests actually detect broken logic, permissions, and invariants.
 
 ## CLI
 
@@ -150,7 +193,7 @@ cairo-mutate demo_staking_protocol --mutators as_rem,as_flip,op_eq --safe
 cairo-mutate --list-mutators
 ```
 
-## Output Style
+### Output Style
 
 Example mutant line:
 
@@ -175,58 +218,7 @@ Example file-wise report:
 
 The repository includes [`demo_staking_protocol/`](./demo_staking_protocol), a small Starknet `snforge` project used to demonstrate the tool.
 
-It contains two independent contracts:
-
-- `Vault` - anyone can deposit, owner can withdraw
-- `StakeVault` - deposits are allowed anytime, withdrawals are gated by unlock time
-
-This pairing gives the mutation engine a more interesting story than a single toy contract:
-
-- one contract tests permissions
-- the other tests time-gated state transitions
-- the test suite can catch different classes of mistakes
-
-That makes the demo more useful for reviewers and more realistic for mutation analysis.
-
-## Installation
-
-Clone the repository:
-
-```bash
-git clone https://github.com/<your-username>/cairo-mutate
-cd cairo-mutate
-```
-
-Or install locally and use the CLI:
-
-```bash
-pip install -e .
-cairo-mutate <target>
-```
-
-The CLI entrypoint is `cairo-mutate`.
-
-When working from source, this is implemented via [`mutate.py`](./mutate.py).
-
-## Where It Fits
-
-`cairo-mutate` is designed to sit alongside existing Starknet tooling:
-
-- run after writing tests
-- run before audits
-- run in CI for test quality checks
-
-## Requirements
-
-- Python 3.10+
-- `snforge`
-- `scarb` `2.14.0` or newer
-
-If your shell resolves the wrong `scarb`, use the asdf shim path:
-
-```bash
-env PATH="$HOME/.asdf/shims:$PATH" snforge test
-```
+It contains two contracts (`Vault`, `StakeVault`) to demonstrate mutation testing on permissions and time-based logic.
 
 ## Safety Behavior
 
@@ -253,6 +245,17 @@ With safe mode enabled, the tool:
 - fails the command if the restored project no longer passes
 
 This is useful for CI, PR checks, and grant demos where you want to prove that the project was healthy before mutation and still healthy afterward.
+
+
+## Where It Fits
+
+`cairo-mutate` is designed to sit alongside existing Starknet tooling:
+
+- After writing tests
+- Before audits
+- In CI pipeline for test quality checks
+
+
 
 ## Current Limitations
 
