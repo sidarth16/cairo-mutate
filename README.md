@@ -43,7 +43,7 @@ Expected output:
 
 <img src="assets/demo-out.png"
        alt="cairo-mutate"  
-       style="width: 320px; border-radius: 10px;"  />
+       style="width: 440px; border-radius: 10px;"  />
 
 > Screenshot shows part of the `-v` output for readability. Use `-vv` for the full mutation log.
 
