@@ -210,12 +210,12 @@ def main():
             parser.error(str(exc))
 
         if not cairo_files:
-            print(color("No .cairo files found under src/", Colors.GREY))
+            print(color("No cairo files found under src/", Colors.GREY))
             return
         if args.file:
             print(color(f"Target file: {ctx.file_label(cairo_files[0])}", Colors.GREY))
         else:
-            print(color(f"Found {len(cairo_files)} .cairo files under {ctx.source_root.relative_to(ctx.project_root) if ctx.source_root.is_relative_to(ctx.project_root) else ctx.source_root}", Colors.GREY))
+            print(color(f"Found {len(cairo_files)} cairo files under {ctx.source_root.relative_to(ctx.project_root) if ctx.source_root.is_relative_to(ctx.project_root) else ctx.source_root}", Colors.GREY))
 
         results = []
         total_files = len(cairo_files)
