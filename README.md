@@ -1,20 +1,30 @@
-<!-- # `cairo-mutate`
-> **Mutation-testing for Starknet contracts** -->
-
-<h1 align="center"><b>cairo-mutate</b></h1>
+<h1 align="center"><b>Cairo-Mutate</b></h1>
 
 <p align="center">
-  <b> Mutation testing for Starknet contracts</b>
+  <b>Mutation testing for Starknet contracts</b><br>
+  <i>Test What Your Tests Miss</i>
+
 </p>
 
 ---
 <div align="center">
-  <img src="https://i.imgur.com/0AlyT8u.png"
+  <img src="https://raw.githubusercontent.com/sidarth16/cairo-mutate/main/assets/logo.png"
        alt="cairo-mutate"  
        style="width: 280px; border-radius: 10px;"  />
 </div>
 
+<p align="center">
+  <img src="https://img.shields.io/badge/license-MIT-green" />
+  <a href="https://pypi.org/project/cairo-mutate/">
+    <img src="https://img.shields.io/pypi/v/cairo-mutate?color=orange&label=PyPI" />
+  </a>
+  <!-- <img src="https://img.shields.io/badge/python-3.x-blue" /> -->
+  <a href="https://pepy.tech/projects/cairo-mutate">
+    <img src="https://static.pepy.tech/personalized-badge/cairo-mutate?period=total&units=INTERNATIONAL_SYSTEM&left_color=BLACK&right_color=GREEN&left_text=downloads" />
+  </a>
+</p>
 
+---
 
 **cairo-mutate** brings mutation testing to Starknet, giving developers a measurable signal of test quality.
 
@@ -30,18 +40,25 @@ it asks:
 
 The tool mutates contract code, reruns the test suite, and measures how many injected faults are actually caught.
 
-That helps uncover:
+It introduces a proactive security layer for Starknet by injecting controlled faults into Cairo contracts and verifying whether existing test suites can detect them.
+
+
+Mutation helps uncover:
 - weak assertions
 - missing edge cases
 - broken invariants
 - brittle state checks
 - false confidence from high coverage
 
-Even a test suite with 100% coverage can still miss important behavioral invariants. `cairo-mutate` helps reveal that gap by checking whether tests fail when those invariants are broken.
+Even a test suite with 100% coverage can still miss important behavioural invariants. `cairo-mutate` helps reveal that gap by checking whether tests fail when those invariants are broken.
+
+`cairo-mutate` moves confidence from post-deployment audits to development-time validation.
+
 
 ### Current Status (MVP)
 A stable, string-based mutation engine with file-wise reporting, safe restore behavior, timeout handling, and a CLI that can run against any Starknet project root.
 
+---
 
 ## Quick Demo
 
@@ -51,11 +68,13 @@ cairo-mutate demo_staking_protocol -v
 
 Expected output:
 
-<img src="https://i.imgur.com/KUMgksP.png"
-       alt="cairo-mutate"  
+<img src="https://raw.githubusercontent.com/sidarth16/cairo-mutate/main/assets/demo-out.png"
+       alt="sample-output"  
        style="width: 440px; border-radius: 10px;"  />
 
 > Screenshot shows part of the `-v` output for readability. Use `-vv` for the full mutation log.
+
+---
 
 ## Requirements
 
@@ -68,6 +87,8 @@ If your shell resolves the wrong `scarb`, use the asdf shim path:
 ```bash
 env PATH="$HOME/.asdf/shims:$PATH" snforge test
 ```
+
+---
 
 ## Installation
 
@@ -101,6 +122,8 @@ The CLI entrypoint is `cairo-mutate`.
 
 When working from source, this is implemented via [`mutate.py`](./mutate.py).
 
+---
+
 ## Use Cases
 
 - Evaluate test strength before deployment  
@@ -108,11 +131,14 @@ When working from source, this is implemented via [`mutate.py`](./mutate.py).
 - Improve confidence in contract invariants  
 - Demonstrate test quality in audits and grants  
 
+---
+
 ## Features
 
 - Scans a Starknet project and mutates Cairo files under `src/`
-- Applies one mutation at a time
+- Applies one mutation at a time for precise fault isolation
 - Runs a configurable test command, defaulting to `snforge test`
+- Built-in timeout handling, to safely skip long-running or stuck mutations
 - Classifies each mutant as:
   - `✔ Caught`
   - `✘ Uncaught`
@@ -120,10 +146,12 @@ When working from source, this is implemented via [`mutate.py`](./mutate.py).
   - `Timeout`
 - Restores original files automatically after each run
 - Cleans up backups on exit, interrupt, or termination
-- Prints file-wise mutation scores plus a final mutation score
-- Supports quiet, summary, and full trace modes
+- Prints file-wise mutation scores along with a final mutation score
+- Supports multiple output modes: quiet, summary, and full trace modes
 
 Works on any Starknet project with `Scarb.toml`, `src/`, and `snforge` tests.
+
+---
 
 ## Mutators
 
@@ -141,12 +169,15 @@ The current MVP uses the following mutators:
 
 These mutators are intentionally string-based for V1. That keeps the tool fast and easy to understand while we build the Cairo-aware AST version later.
 
+---
 
 ## Why Mutation Testing?
 
 Passing tests ≠ correct behavior.
 
 `cairo-mutate` measures whether your tests actually detect broken logic, permissions, and invariants.
+
+---
 
 ## CLI
 
@@ -197,22 +228,23 @@ cairo-mutate --list-mutators
 
 Example mutant line:
 
-<img src="https://i.imgur.com/z0Um43r.png"
+<img src="https://raw.githubusercontent.com/sidarth16/cairo-mutate/main/assets/line.png"
      alt="mutant-line"
-     style="width: 650px;" />
+     style="width: 770px;" />
 
 Example skipped summary:
 
-<img src="https://i.imgur.com/TtRvk9p.png"
+<img src="https://raw.githubusercontent.com/sidarth16/cairo-mutate/main/assets/skip.png"
      alt="skip-summary"
-     style="width: 300px;" />
+     style="width: 350px;" />
 
 Example file-wise report:
 
-<img src="https://i.imgur.com/DXrzSLj.png"
+<img src="https://raw.githubusercontent.com/sidarth16/cairo-mutate/main/assets/report.png"
      alt="report-summary"
-     style="width: 350px;" />
+     style="width: 450px;" />
 
+---
 
 ## Demo Project
 
@@ -234,6 +266,8 @@ But mutation testing reveals a different picture:
 This means many injected faults were **not detected by the test suite**, despite near-complete coverage.
 
 > High coverage does not guarantee strong tests — mutation testing exposes that gap.
+
+---
 
 ## Safety Behavior
 
@@ -261,6 +295,7 @@ With safe mode enabled, the tool:
 
 This is useful for CI, PR checks, and grant demos where you want to prove that the project was healthy before mutation and still healthy afterward.
 
+---
 
 ## Where It Fits
 
@@ -270,7 +305,7 @@ This is useful for CI, PR checks, and grant demos where you want to prove that t
 - Before audits
 - In CI pipeline for test quality checks
 
-
+---
 
 ## Current Limitations
 
@@ -281,6 +316,8 @@ This is still an MVP, so a few limits are intentional:
 - the current engine is tuned for practicality and clarity, not full Cairo syntax coverage
 
 Those limits are part of the plan, not a bug. The next major step is a Cairo-aware parser and AST-based mutation layer.
+
+---
 
 ## Roadmap
 
@@ -309,8 +346,50 @@ Cairo-aware AST mutation engine with:
 
 A full mutation and analysis framework for Starknet contracts.
 
+---
+
 ## Project Layout
 
 - [`mutate.py`](./mutate.py) - root CLI orchestrator
 - [`mutators/`](./mutators) - one file per mutator plus shared runtime helpers
 - [`demo_staking_protocol/`](./demo_staking_protocol) - standalone Starknet demo project
+
+
+---
+
+## Author
+
+**Sidarth S**<br/>
+*Security Engineer & builder of cairo-mutate*
+
+Focused on improving test quality and security tooling for Starknet.
+
+- GitHub: https://github.com/sidarth16
+- Portfolio: https://sidarthx0.vercel.app
+
+---
+
+## License
+
+cairo-mutate is released under the MIT License.
+
+© 2026 — Built for developers who care about test quality, correctness, and security.<br>
+Commercial use is allowed. If you use cairo-mutate in tooling, research, or audits, attribution is appreciated — for example, mentioning “Powered by cairo-mutate” in your documentation or repository.
+
+Let’s build openly and raise the standard for testing in Starknet
+
+---
+
+## Support & Updates
+
+Cairo-Mutate is actively evolving — expect improvements in mutation quality, deeper Cairo integration, and CI-ready workflows.
+
+- Report issues or request features on GitHub  
+- Share feedback from real-world usage  
+- Contributions and discussions are welcome  
+
+Follow the project and track progress on the repository.
+
+---
+
+**Tests shouldn’t just pass — they should prove correctness.**
