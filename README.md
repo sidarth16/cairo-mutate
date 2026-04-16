@@ -108,7 +108,7 @@ pip install cairo-mutate
 Clone the repository and install it in editable mode:
 
 ```bash
-git clone https://github.com/<your-username>/cairo-mutate
+git clone https://github.com/sidarth16/cairo-mutate
 cd cairo-mutate
 
 # create venv
