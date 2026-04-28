@@ -2,8 +2,10 @@
 
 <p align="center">
   <b>Mutation testing for Starknet contracts</b><br>
-  <i>Test What Your Tests Miss</i>
-
+  <i>Test What Your Tests Miss</i><br><br>
+  <a href="https://giveth.io/project/mutation-testing-framework-for-cairo-and-solidity">
+    Support this project on Giveth
+  </a>
 </p>
 
 ---
@@ -163,7 +165,7 @@ The current MVP uses the following mutators:
 | `AS-REM` 	| Assert removal 	| replaces an `assert` body with a no-op
 | `AS-FLIP` 	| Assert condition flip 	| flips assertion comparisons, such as `== ↔ !=` and `> ↔ <`	|
 | `OP-EQ` 	| Equality operator mutation 	| flips equality and inequality operators outside `assert` expressions.	|
-| `OP-ARI` 	|  Arithmetic operator mutation 	| flips arithmetic operators like `+ ↔ -`	|
+| `OP-ARI` 	|  Arithmetic operator mutation 	| flips arithmetic operators like `+ ↔ - ↔ * ↔ / ↔ %`	|
 | `OP-ASG` 	| Assignment operator mutation 	| mutates assignment-style operations such as `+=` and `-=` into plain assignment behavior	|
 
 
